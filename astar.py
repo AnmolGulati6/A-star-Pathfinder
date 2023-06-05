@@ -3,9 +3,9 @@ import pygame
 import math
 from queue import PriorityQueue
 
-WIDTH = 800  # square
-WIN = pygame.display.set_mode((WIDTH, WIDTH))
 pygame.display.set_caption("A* Path Visualizer")
+WIDTH = 700  # square
+WIN = pygame.display.set_mode((WIDTH, WIDTH))
 
 RED = (255, 0, 0)  # already looked at node
 GREEN = (0, 255, 0)
@@ -21,14 +21,20 @@ TURQUOISE = (64, 224, 208)
 
 class Node:
     def __init__(self, row, col, width, total_rows):
-        self.row = row
-        self.col = col
-        self.x = row * width
-        self.y = col * width
-        self.color = WHITE
-        self.neighbors = []
         self.width = width
         self.total_rows = total_rows
+        self.col = col
+        self.row = row
+        self.y = col * width
+        self.x = row * width
+        self.color = WHITE
+        self.neighbors = []
+
+    def isEnd(self):
+        return self.color == TURQUOISE
+
+    def isBarrier(self):
+        return self.color == BLACK
 
     def getPosition(self):  # row column order
         return self.row, self.col
@@ -39,80 +45,74 @@ class Node:
     def isOpen(self):
         return self.color == GREEN
 
-    def isBarrier(self):
-        return self.color == BLACK
-
     def isStart(self):
         return self.color == ORANGE
 
-    def isEnd(self):
-        return self.color == TURQUOISE
+    def pathColor(self):
+        self.color = PURPLE
 
     def reset(self):
         self.color = WHITE
 
-    def make_start(self):
+    def startColor(self):
         self.color = ORANGE
 
-    def make_closed(self):
-        self.color = RED
-
-    def make_open(self):
+    def openColor(self):
         self.color = GREEN
 
-    def make_barrier(self):
+    def closeColor(self):
+        self.color = RED
+
+    def barrierColor(self):
         self.color = BLACK
 
-    def make_end(self):
+    def endColor(self):
         self.color = TURQUOISE
-
-    def make_path(self):
-        self.color = PURPLE
 
     def draw(self, win):
         pygame.draw.rect(win, self.color, (self.x, self.y, self.width, self.width))
 
     def updateNeighbours(self, grid):
         self.neighbors = []
-        if self.row < self.total_rows - 1 and not grid[self.row + 1][self.col].isBarrier():  # Down
-            self.neighbors.append(grid[self.row + 1][self.col])
-
-        if self.row > 0 and not grid[self.row - 1][self.col].isBarrier():  # Up
+        if self.row > 0 and not grid[self.row - 1][self.col].isBarrier():  # UP
             self.neighbors.append(grid[self.row - 1][self.col])
 
-        if self.col < self.total_rows - 1 and not grid[self.row][self.col + 1].isBarrier():  # Right
-            self.neighbors.append(grid[self.row][self.col + 1])
+        if self.row < self.total_rows - 1 and not grid[self.row + 1][self.col].isBarrier():  # DOWN
+            self.neighbors.append(grid[self.row + 1][self.col])
 
         if self.col > 0 and not grid[self.row][self.col - 1].isBarrier():  # Left
             self.neighbors.append(grid[self.row][self.col - 1])
+
+        if self.col < self.total_rows - 1 and not grid[self.row][self.col + 1].isBarrier():  # Right
+            self.neighbors.append(grid[self.row][self.col + 1])
 
     def __lt__(self, other):
         return False
 
 
-# in A* alg, h(n) gives shortest estimated distance of node N to end node
-def h(point1, point2):
-    x1, y1 = point1
-    x2, y2 = point2
-    return abs(x2 - x1) + abs(y2 - y1)
-
-
-def reconstruct_path(cameFrom, current, draw):
+def makePath(cameFrom, current, draw):
     while current in cameFrom:
         current = cameFrom[current]
-        current.make_path()
+        current.pathColor()
         draw()
 
 
-def algorithm(draw, grid, start, end):
+# in A* alg, h(n) gives shortest estimated distance of node N to end node
+def heuristic(point1, point2):
+    x2, y2 = point2
+    x1, y1 = point1
+    return abs(x2 - x1) + abs(y2 - y1)
+
+
+def pathfindingAlg(draw, grid, start, end):
+    cameFrom = {}
     count = 0
     openSet = PriorityQueue()
     openSet.put((0, count, start))
-    cameFrom = {}
     g_score = {node: float("inf") for row in grid for node in row}
+    f_score = {node: float("inf") for row in grid for node in row}
     g_score[start] = 0
-    f_score = {spot: float("inf") for row in grid for spot in row}
-    f_score[start] = h(start.getPosition(), end.getPosition())
+    f_score[start] = heuristic(start.getPosition(), end.getPosition())
 
     openSet_hash = {start}
 
@@ -125,8 +125,8 @@ def algorithm(draw, grid, start, end):
         openSet_hash.remove(current)
 
         if current == end:
-            reconstruct_path(cameFrom, end, draw)
-            end.make_end()
+            makePath(cameFrom, end, draw)
+            end.endColor()
             return True
 
         for neighbor in current.neighbors:
@@ -135,17 +135,17 @@ def algorithm(draw, grid, start, end):
             if temp_g_score < g_score[neighbor]:
                 cameFrom[neighbor] = current
                 g_score[neighbor] = temp_g_score
-                f_score[neighbor] = temp_g_score + h(neighbor.getPosition(), end.getPosition())
+                f_score[neighbor] = temp_g_score + heuristic(neighbor.getPosition(), end.getPosition())
                 if neighbor not in openSet_hash:
                     count += 1
                     openSet.put((f_score[neighbor], count, neighbor))
                     openSet_hash.add(neighbor)
-                    neighbor.make_open()
+                    neighbor.openColor()
 
         draw()
 
         if current != start:
-            current.make_closed()
+            current.closeColor()
 
 
 def makeGrid(rows, width):
@@ -180,8 +180,8 @@ def draw(win, grid, rows, width):
 
 
 def squareClicked(position, rows, width):
-    width_of_cubes = width // rows
     y, x = position
+    width_of_cubes = width // rows
     col = x // width_of_cubes
     row = y // width_of_cubes
 
@@ -191,9 +191,9 @@ def squareClicked(position, rows, width):
 def main(win, width):
     ROWS = 50
     grid = makeGrid(ROWS, width)
+    run = True
     start = None
     end = None
-    run = True
 
     while run:
         draw(win, grid, ROWS, width)
@@ -207,12 +207,12 @@ def main(win, width):
                 node = grid[row][col]
                 if not start and node != end:  # cant have start and end in same place
                     start = node
-                    start.make_start()
+                    start.startColor()
                 elif not end and node != start:  # cant have start and end in same place
                     end = node
-                    end.make_end()
+                    end.endColor()
                 elif node != end and node != start:
-                    node.make_barrier()
+                    node.barrierColor()
 
             elif pygame.mouse.get_pressed()[2]:  # right mouse button
                 pos = pygame.mouse.get_pos()
@@ -229,7 +229,7 @@ def main(win, width):
                     for row in grid:
                         for node in row:
                             node.updateNeighbours(grid)
-                    algorithm(lambda: draw(win, grid, ROWS, width), grid, start, end)
+                    pathfindingAlg(lambda: draw(win, grid, ROWS, width), grid, start, end)
 
                 if event.key == pygame.K_c:
                     start = None
